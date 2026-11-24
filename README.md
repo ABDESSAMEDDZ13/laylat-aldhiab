@@ -22,6 +22,7 @@ Créer un service web Python ou Docker sur un hébergeur prenant en charge les c
 
 ## Règles
 
+- Salle d'attente : conversation vocale entre les joueurs de la même salle après activation du son et autorisation du microphone. Chaque joueur peut couper/rétablir son micro sans couper l'écoute. Au démarrage, les règles de parole et les canaux privés de la partie prennent automatiquement le relais.
 - Minimum 5 joueurs ; 2 loups spéciaux, médecin, sorcier, SV. Option troisième loup à partir de 7 joueurs. Limite technique provisoire de 30 joueurs, nombre de nuits illimité.
 - Début directement la nuit : loups, sorcier, médecin. Les loups se reconnaissent et discutent dans un canal privé contrôlé côté serveur. Le noir tue, le silencieux fait taire, le survivant spécial récupère les deux pouvoirs si nécessaire, puis le loup normal si les deux spéciaux meurent. Les loups ne peuvent pas s'entretuer, mais peuvent se faire taire entre eux. La même cible ne peut pas être réduite au silence deux nuits de suite.
 - Sorcier : une vie, une mort, utilisables ensemble ; la victime des loups est visible uniquement tant que la potion de vie est disponible. Le médecin peut protéger contre les deux types de mise à mort ; protection illimitée, sauf lui-même deux nuits consécutives. Aucune protection contre le silence.

@@ -170,11 +170,12 @@ class Game:
         return True
     def voice_targets(self,i):
         if self.paused_at is not None or i not in self.alive(): return []
+        if self.phase=='lobby': return [j for j in self.alive() if j!=i]
         if self.phase=='wolves' and i in self.wolves(): return [j for j in self.wolves() if j!=i]
         if self.phase in ('speech','debate') and self.turn==i: return [j for j in self.alive() if j!=i]
         return []
     def can_talk(self,i):
-        return self.paused_at is None and i in self.alive() and ((self.phase=='wolves' and i in self.wolves()) or (self.phase in ('speech','debate') and i==self.turn))
+        return self.paused_at is None and i in self.alive() and (self.phase=='lobby' or (self.phase=='wolves' and i in self.wolves()) or (self.phase in ('speech','debate') and i==self.turn))
     def view(self,i):
         p=self.players[i]; private={}; reveal=self.phase=='end'; w=p.role in WOLVES and p.alive
         if w: private['wolves']=self.wolves()

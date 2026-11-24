@@ -41,6 +41,31 @@ class Logic(unittest.TestCase):
         g,p=self.make();p[-1].ws=None;g.check_pause();self.assertTrue(g.paused_at);self.assertFalse(g.can_talk(p[0].id));g.act(g.host,{'type':'kick','target':p[-1].id});self.assertFalse(p[-1].alive);self.assertIsNone(g.paused_at)
         g.eliminate(p[0].id,'vote');g.eliminate(p[1].id,'vote');self.assertTrue(g.check_win());self.assertEqual(g.winner,'village')
 class Network(unittest.IsolatedAsyncioTestCase):
+    async def test_lobby_voice_is_bidirectional_and_room_isolated(self):
+        ROOMS.clear();client=TestClient(TestServer(create_app()));await client.start_server();socks=[]
+        async def read_state(ws):
+            while True:
+                msg=await ws.receive(timeout=2)
+                if msg.type==WSMsgType.TEXT:
+                    d=json.loads(msg.data)
+                    if d['type']=='state':return d
+        try:
+            for i in range(3):
+                ws=await client.ws_connect('/ws');socks.append(ws)
+                await ws.send_json({'type':'join' if i==1 else 'create','name':f'lobby{i}','code':code if i==1 else ''})
+                d=await read_state(ws)
+                self.assertTrue(d['talk']);self.assertEqual(d['phase'],'lobby')
+                if i==0:code=d['code']
+            await read_state(socks[0])  # First player sees the second join.
+            for sender,receiver in [(0,1),(1,0)]:
+                await socks[sender].send_bytes(bytes(640))
+                msg=await socks[receiver].receive(timeout=2)
+                self.assertEqual(msg.type,WSMsgType.BINARY);self.assertEqual(len(msg.data),648)
+                with self.assertRaises(asyncio.TimeoutError):await socks[2].receive(timeout=.15)
+        finally:
+            for ws in socks:await ws.close()
+            await client.close();ROOMS.clear()
+
     async def test_actual_websocket_audio_isolation(self):
         ROOMS.clear();client=TestClient(TestServer(create_app()));await client.start_server();socks=[]
         async def read_state(ws):
