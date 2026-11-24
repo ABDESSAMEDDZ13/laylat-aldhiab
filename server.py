@@ -14,15 +14,15 @@ def require(ok,msg):
 def choice(v, values, default): return v if v in values else default
 
 class Player:
-    def __init__(self,name):
+    def __init__(self,name,bot=False):
         self.id=secrets.token_hex(8); self.token=secrets.token_urlsafe(32); self.name=name
-        self.role=None; self.alive=True; self.ws=None; self.last_audio=0; self.audio_budget=10; self.audio_at=now()
+        self.bot=bot; self.role=None; self.alive=True; self.ws=None; self.last_audio=0; self.audio_budget=10; self.audio_at=now()
     @property
-    def online(self): return self.ws is not None and not self.ws.closed
+    def online(self): return self.bot or (self.ws is not None and not self.ws.closed)
 
 class Game:
     def __init__(self,code,owner):
-        self.code=code; self.players={owner.id:owner}; self.host=owner.id; self.phase='lobby'; self.day=0
+        self.test=False; self.test_role=None; self.bot_due=0; self.code=code; self.players={owner.id:owner}; self.host=owner.id; self.phase='lobby'; self.day=0
         self.settings={'speech':60,'debate':120,'wolves':120,'witch':30,'doctor':30,'single':False,'extra':False}
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
@@ -49,6 +49,9 @@ class Game:
         roles=wolf_roles+['doctor','witch']
         require(n>2*len(wolf_roles),'الذئاب يجب أن يكونوا أقل من نصف اللاعبين')
         roles+=['villager']*(n-len(roles)); RNG.shuffle(roles)
+        if self.test and self.test_role:
+            require(self.test_role in roles,'الدور المختار غير موجود ضمن الإعدادات')
+            idx=roles.index(self.test_role); roles[0],roles[idx]=roles[idx],roles[0]
         for p,r in zip(self.players.values(),roles): p.role=r
         self.night()
     def powers(self):
@@ -121,8 +124,13 @@ class Game:
             require(i==self.host and self.phase=='lobby','الإعدادات لصاحب الغرفة فقط')
             s=d.get('settings',{}); require(isinstance(s,dict),'إعدادات غير صالحة')
             for key,vals in {'speech':[30,60,90,120],'debate':[60,120,180],'wolves':[60,120,180],'witch':[15,30,60],'doctor':[15,30,60]}.items(): self.settings[key]=choice(s.get(key),vals,self.settings[key])
-            self.settings['single']=s.get('single') is True
-            self.settings['extra']=s.get('extra') is True and not self.settings['single']; return
+            single=s.get('single') is True; extra=s.get('extra') is True and not single
+            if self.test:
+                require(not extra or len(self.players)>=7,'ثلاثة ذئاب تحتاج سبعة لاعبين')
+                require(not single or self.test_role not in ('silent','wolf'),'عدد الذئاب لا يناسب دورك')
+                require(self.test_role!='wolf' or extra,'الذئب العادي يحتاج ثلاثة ذئاب')
+            self.settings['single']=single
+            self.settings['extra']=extra; return
         if k=='start': self.start(i); return
         if k=='kick':
             target=d.get('target'); require(i==self.host and target in self.players and target!=i and not self.players[target].online,'يمكن إقصاء لاعب غير متصل فقط')
@@ -162,7 +170,38 @@ class Game:
         elif k=='vote':
             require(self.phase=='vote' and self.turn==i and i not in self.votes,'ليس دورك في التصويت'); t=d.get('target'); require(t in self.valid_targets(i,k),'اختيار غير مسموح'); self.votes[i]=t; self.next_vote()
         else: raise ValueError('إجراء غير معروف')
+    def bot_step(self):
+        if not self.test or self.paused_at is not None or now()<self.bot_due: return False
+        move=None; actor=None
+        if self.phase=='wolves':
+            for k,i in self.caps.items():
+                if self.players[i].bot and k not in self.actions:
+                    targets=self.valid_targets(i,k)
+                    if targets or k=='silence': actor=i; move={'type':k,'target':RNG.choice(targets) if targets else None}; break
+        elif self.phase=='witch':
+            i=self.role('witch')
+            if i and self.players[i].bot:
+                actor=i; move={'type':'witch','save':bool(self.potions['life'] and self.actions.get('kill') in self.alive() and RNG.random()<.65),'target':None}
+                targets=self.valid_targets(i,'witchkill')
+                if self.potions['death'] and targets and RNG.random()<.25: move['target']=RNG.choice(targets)
+        elif self.phase=='doctor':
+            i=self.role('doctor')
+            if i and self.players[i].bot:
+                targets=self.valid_targets(i,'protect')
+                if targets: actor=i; move={'type':'protect','target':RNG.choice(targets)}
+        elif self.phase in ('speech','debate','vote') and self.turn and self.players[self.turn].bot:
+            actor=self.turn
+            if self.phase=='vote':
+                targets=self.valid_targets(actor,'vote')
+                if targets:
+                    other=[i for i in targets if i!=actor and (self.players[actor].role not in WOLVES or i not in self.wolves())]
+                    move={'type':'vote','target':RNG.choice(other or targets)}
+            else: move={'type':'finish'}
+        if move:
+            self.bot_due=now()+1.2; self.act(actor,move); return True
+        return False
     def tick(self):
+        if self.bot_step(): return True
         if self.paused_at is not None or self.deadline is None or now()<self.deadline: return False
         if self.phase=='wolves': self.witch_phase()
         elif self.phase=='witch': self.doctor_phase()
@@ -189,13 +228,27 @@ class Game:
                 private['witch']={'victim':self.actions.get('kill') if self.potions['life'] else None,'targets':self.valid_targets(i,'witchkill') if self.potions['death'] else []}
         if self.phase=='doctor' and p.alive and p.role=='doctor': private['protect']=self.valid_targets(i,'protect')
         if self.phase=='vote' and self.turn==i and p.alive: private['vote']=self.valid_targets(i,'vote')
-        return {'type':'state','code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
+        return {'type':'state','test':self.test,'testRole':self.test_role,'code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'bot':q.bot,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
     async def broadcast(self):
-        await asyncio.gather(*(safe_send(p.ws,self.view(p.id)) for p in self.players.values() if p.online))
+        await asyncio.gather(*(safe_send(p.ws,self.view(p.id)) for p in self.players.values() if p.online and not p.bot))
 
 async def safe_send(ws,data):
     try: await ws.send_json(data)
     except (ConnectionError,RuntimeError): pass
+
+def configure_test(g,d):
+    count=d.get('count',8)
+    require(type(count) is int and 5<=count<=30,'اختر بين 5 و30 لاعباً')
+    role=choice(d.get('role'),list(ROLES)+['random'],'random')
+    if role=='wolf' and count<7: raise ValueError('الذئب العادي يحتاج سبعة لاعبين على الأقل')
+    g.settings['single']=count==5 and role not in ('silent','wolf')
+    g.settings['extra']=role=='wolf'
+    g.test_role=None if role=='random' else role
+    for n in range(1,count):
+        label=f'لاعب آلي {n}'
+        if label==g.players[g.host].name: label+=' (آلي)'
+        bot=Player(label,bot=True);g.players[bot.id]=bot
+    g.bot_due=now()+1.2
 
 def namecheck(n):
     require(isinstance(n,str) and 1<=len(n.strip())<=24,'اكتب اسماً من 1 إلى 24 حرفاً'); return n.strip()
@@ -208,12 +261,14 @@ async def socket(request):
                 try:
                     d=json.loads(msg.data); require(isinstance(d,dict),'طلب غير صالح'); typ=d.get('type')
                     if not player:
-                        if typ=='create':
+                        if typ in ('create','create_test'):
                             code=''.join(secrets.choice('23456789ABCDEFGHJKLMNPQRSTUVWXYZ') for _ in range(6))
                             while code in ROOMS: code=''.join(secrets.choice('23456789ABCDEFGHJKLMNPQRSTUVWXYZ') for _ in range(6))
-                            player=Player(namecheck(d.get('name'))); game=Game(code,player); ROOMS[code]=game
+                            new_player=Player(namecheck(d.get('name'))); new_game=Game(code,new_player)
+                            if typ=='create_test': new_game.test=True; configure_test(new_game,d)
+                            player=new_player; game=new_game; ROOMS[code]=game
                         elif typ=='join':
-                            code=str(d.get('code','')).upper(); g=ROOMS.get(code); require(g is not None and g.phase=='lobby','الغرفة غير موجودة أو بدأت اللعبة'); require(len(g.players)<30,'الغرفة ممتلئة'); name=namecheck(d.get('name')); require(all(p.name!=name for p in g.players.values()),'الاسم مستخدم'); player=Player(name); game=g; game.players[player.id]=player
+                            code=str(d.get('code','')).upper(); g=ROOMS.get(code); require(g is not None and g.phase=='lobby' and not g.test,'الغرفة غير موجودة أو بدأت اللعبة'); require(len(g.players)<30,'الغرفة ممتلئة'); name=namecheck(d.get('name')); require(all(p.name!=name for p in g.players.values()),'الاسم مستخدم'); player=Player(name); game=g; game.players[player.id]=player
                         elif typ=='resume':
                             g=ROOMS.get(str(d.get('code','')).upper()); p=next((p for p in g.players.values() if secrets.compare_digest(p.token,str(d.get('token','')))),None) if g else None; require(p is not None,'انتهت جلسة الغرفة'); game=g; player=p
                         else: raise ValueError('انضم إلى غرفة أولاً')
@@ -231,14 +286,14 @@ async def socket(request):
                 player.audio_budget-=1
                 async def relay(q):
                     try:
-                        if q.online: await asyncio.wait_for(q.ws.send_bytes(bytes.fromhex(player.id)+data),.25)
+                        if q.online and not q.bot: await asyncio.wait_for(q.ws.send_bytes(bytes.fromhex(player.id)+data),.25)
                     except (ConnectionError,RuntimeError,asyncio.TimeoutError): pass
                 await asyncio.gather(*(relay(game.players[j]) for j in game.voice_targets(player.id)))
     finally:
         if player and player.ws is ws:
             player.ws=None
             if game.host==player.id:
-                nxt=next((q.id for q in game.players.values() if q.online and q.alive),None)
+                nxt=next((q.id for q in game.players.values() if q.online and q.alive and not q.bot),None)
                 if nxt: game.host=nxt
             game.check_pause(); await game.broadcast()
     return ws
@@ -247,7 +302,7 @@ async def ticker(app):
     while True:
         await asyncio.sleep(.15)
         for code,g in list(ROOMS.items()):
-            if not any(p.online for p in g.players.values()) and now()-g.activity>7200: ROOMS.pop(code,None); continue
+            if not any(p.online and not p.bot for p in g.players.values()) and now()-g.activity>(600 if g.test else 7200): ROOMS.pop(code,None); continue
             if g.tick(): await g.broadcast()
 async def lifecycle(app):
     task=asyncio.create_task(ticker(app)); yield; task.cancel()
