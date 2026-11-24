@@ -23,7 +23,7 @@ class Player:
 class Game:
     def __init__(self,code,owner):
         self.code=code; self.players={owner.id:owner}; self.host=owner.id; self.phase='lobby'; self.day=0
-        self.settings={'speech':60,'debate':120,'wolves':120,'witch':30,'doctor':30,'extra':False}
+        self.settings={'speech':60,'debate':120,'wolves':120,'witch':30,'doctor':30,'single':False,'extra':False}
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
         self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
@@ -45,8 +45,9 @@ class Game:
     def start(self,actor):
         require(actor==self.host and self.phase=='lobby','صاحب الغرفة فقط يمكنه بدء اللعبة')
         n=len(self.players); require(n>=5,'تحتاج إلى خمسة لاعبين على الأقل'); require(all(p.online for p in self.players.values()),'انتظر اتصال جميع اللاعبين')
-        roles=['black','silent','doctor','witch']+(['wolf'] if self.settings['extra'] else [])
-        require(n>2*(2+int(self.settings['extra'])),'الذئاب يجب أن يكونوا أقل من نصف اللاعبين')
+        wolf_roles=['black'] if self.settings['single'] else ['black','silent']+(['wolf'] if self.settings['extra'] else [])
+        roles=wolf_roles+['doctor','witch']
+        require(n>2*len(wolf_roles),'الذئاب يجب أن يكونوا أقل من نصف اللاعبين')
         roles+=['villager']*(n-len(roles)); RNG.shuffle(roles)
         for p,r in zip(self.players.values(),roles): p.role=r
         self.night()
@@ -120,7 +121,8 @@ class Game:
             require(i==self.host and self.phase=='lobby','الإعدادات لصاحب الغرفة فقط')
             s=d.get('settings',{}); require(isinstance(s,dict),'إعدادات غير صالحة')
             for key,vals in {'speech':[30,60,90,120],'debate':[60,120,180],'wolves':[60,120,180],'witch':[15,30,60],'doctor':[15,30,60]}.items(): self.settings[key]=choice(s.get(key),vals,self.settings[key])
-            self.settings['extra']=s.get('extra') is True; return
+            self.settings['single']=s.get('single') is True
+            self.settings['extra']=s.get('extra') is True and not self.settings['single']; return
         if k=='start': self.start(i); return
         if k=='kick':
             target=d.get('target'); require(i==self.host and target in self.players and target!=i and not self.players[target].online,'يمكن إقصاء لاعب غير متصل فقط')

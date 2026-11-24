@@ -22,6 +22,7 @@ Créer un service web Python ou Docker sur un hébergeur prenant en charge les c
 
 ## Règles
 
+- Nombre de loups au choix de l'hôte : 1 (tue et réduit au silence, adapté à 5 joueurs), 2 (répartition initiale) ou 3 (à partir de 7 joueurs). Le mode à un loup conserve le médecin, le sorcier et les autres règles.
 - Salle d'attente : conversation vocale entre les joueurs de la même salle après activation du son et autorisation du microphone. Chaque joueur peut couper/rétablir son micro sans couper l'écoute. Au démarrage, les règles de parole et les canaux privés de la partie prennent automatiquement le relais.
 - Minimum 5 joueurs ; 2 loups spéciaux, médecin, sorcier, SV. Option troisième loup à partir de 7 joueurs. Limite technique provisoire de 30 joueurs, nombre de nuits illimité.
 - Début directement la nuit : loups, sorcier, médecin. Les loups se reconnaissent et discutent dans un canal privé contrôlé côté serveur. Le noir tue, le silencieux fait taire, le survivant spécial récupère les deux pouvoirs si nécessaire, puis le loup normal si les deux spéciaux meurent. Les loups ne peuvent pas s'entretuer, mais peuvent se faire taire entre eux. La même cible ne peut pas être réduite au silence deux nuits de suite.

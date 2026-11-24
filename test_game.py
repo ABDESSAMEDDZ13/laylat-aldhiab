@@ -5,6 +5,23 @@ from server import Game,Player,create_app,ROOMS
 class Online:
     closed=False
 class Logic(unittest.TestCase):
+    def test_single_wolf_five_players_both_powers(self):
+        ps=[Player(f'p{i}') for i in range(5)];g=Game('SOLO',ps[0]);g.players={p.id:p for p in ps}
+        for p in ps:p.ws=Online()
+        g.act(g.host,{'type':'settings','settings':{'single':True,'extra':True}})
+        self.assertFalse(g.settings['extra'])
+        g.start(g.host)
+        self.assertEqual(len(g.wolves()),1)
+        wolf=g.wolves()[0];self.assertEqual(g.powers(),{'kill':wolf,'silence':wolf})
+        self.assertEqual(sorted(p.role for p in ps),['black','doctor','villager','villager','witch'])
+        villagers=[p.id for p in ps if p.role=='villager']
+        g.act(wolf,{'type':'kill','target':villagers[0]});self.assertEqual(g.phase,'wolves')
+        g.act(wolf,{'type':'silence','target':villagers[1]});self.assertEqual(g.phase,'witch')
+        g.act(g.role('witch'),{'type':'witch','save':False,'target':None})
+        g.act(g.role('doctor'),{'type':'protect','target':g.role('doctor')})
+        self.assertFalse(g.players[villagers[0]].alive);self.assertEqual(g.silenced,villagers[1]);self.assertIsNone(g.winner)
+        g.eliminate(wolf,'vote');self.assertTrue(g.check_win());self.assertEqual(g.winner,'village')
+
     def make(self,extra=False):
         roles=['black','silent','witch','doctor','villager','villager','villager','villager']+(['wolf'] if extra else [])
         ps=[Player(r+str(i)) for i,r in enumerate(roles)]; g=Game('TEST',ps[0]); g.players={p.id:p for p in ps}
