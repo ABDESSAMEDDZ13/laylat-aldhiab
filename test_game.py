@@ -57,6 +57,21 @@ class Logic(unittest.TestCase):
             self.assertEqual(g.phase,'speech')
             self.assertNotIn(muted.id,[g.turn]+g.queue)
 
+    def test_default_timers_and_vote_timeout(self):
+        g,players=self.make()
+        for key in ('speech','debate','vote','wolves','witch','doctor'):
+            self.assertEqual(g.settings[key],60)
+        g.begin_vote(False)
+        first=g.turn
+        self.assertAlmostEqual(g.view(first)['remaining'],60,delta=1)
+        g.deadline=0;g.tick()
+        self.assertNotEqual(g.turn,first)
+        self.assertEqual(g.votes,{})
+        self.assertAlmostEqual(g.view(g.turn)['remaining'],60,delta=1)
+        while g.phase=='vote':
+            g.deadline=0;g.tick()
+        self.assertEqual(g.phase,'wolves')
+
     def test_inheritance(self):
         g,p=self.make(True);b,s,*_=p;normal=p[-1];g.eliminate(b.id,'vote');self.assertEqual(g.powers(),{'kill':s.id,'silence':s.id});g.eliminate(s.id,'vote');self.assertEqual(g.powers(),{'kill':normal.id,'silence':normal.id})
     def test_vote_tie_and_debate(self):
@@ -66,7 +81,7 @@ class Logic(unittest.TestCase):
         while g.phase=='vote':g.act(g.turn,{'type':'vote','target':[a.id,b.id][i%2]});i+=1
         self.assertEqual(g.phase,'debate');self.assertEqual(set(g.tied),{a.id,b.id});self.assertIn(a.id,[g.turn]+g.queue)
         while g.phase=='debate':g.act(g.turn,{'type':'finish'})
-        self.assertNotIn(a.id,[g.turn]+g.queue);self.assertNotIn(b.id,[g.turn]+g.queue);self.assertIsNone(g.deadline)
+        self.assertNotIn(a.id,[g.turn]+g.queue);self.assertNotIn(b.id,[g.turn]+g.queue);self.assertIsNotNone(g.deadline)
         i=0
         while g.phase=='vote':g.act(g.turn,{'type':'vote','target':[a.id,b.id][i%2]});i+=1
         self.assertEqual(g.phase,'result');self.assertTrue(all(x.alive for x in p));g.deadline=0;g.tick();self.assertEqual(g.phase,'wolves');self.assertEqual(g.day,2)

@@ -23,7 +23,7 @@ class Player:
 class Game:
     def __init__(self,code,owner):
         self.test=False; self.test_role=None; self.bot_due=0; self.code=code; self.players={owner.id:owner}; self.host=owner.id; self.phase='lobby'; self.day=0
-        self.settings={'speech':60,'debate':120,'wolves':120,'witch':30,'doctor':30,'single':False,'extra':False}
+        self.settings={'speech':60,'debate':60,'vote':60,'wolves':60,'witch':60,'doctor':60,'single':False,'extra':False}
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
         self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
@@ -96,7 +96,9 @@ class Game:
         self.round=2 if second else 1; self.votes={}; self.setphase('vote')
         self.queue=self.order([i for i in self.alive() if not second or i not in self.tied]); self.next_vote()
     def next_vote(self):
-        if self.queue: self.turn=self.queue.pop(0)
+        if self.queue:
+            self.turn=self.queue.pop(0)
+            self.deadline=(self.paused_at or now())+self.settings['vote']
         else: self.finish_vote()
     def finish_vote(self):
         counts={i:0 for i in self.alive() if self.round==1 or i in self.tied}
@@ -124,7 +126,7 @@ class Game:
         if k=='settings':
             require(i==self.host and self.phase=='lobby','الإعدادات لصاحب الغرفة فقط')
             s=d.get('settings',{}); require(isinstance(s,dict),'إعدادات غير صالحة')
-            for key,vals in {'speech':[30,60,90,120],'debate':[60,120,180],'wolves':[60,120,180],'witch':[15,30,60],'doctor':[15,30,60]}.items(): self.settings[key]=choice(s.get(key),vals,self.settings[key])
+            for key,vals in {'speech':[30,60,90,120],'debate':[60,120,180],'vote':[30,60,90,120],'wolves':[60,120,180],'witch':[15,30,60],'doctor':[15,30,60]}.items(): self.settings[key]=choice(s.get(key),vals,self.settings[key])
             single=s.get('single') is True; extra=s.get('extra') is True and not single
             if self.test:
                 require(not extra or len(self.players)>=7,'ثلاثة ذئاب تحتاج سبعة لاعبين')
@@ -210,6 +212,7 @@ class Game:
         elif self.phase in ('speech','debate'): self.next_speech()
         elif self.phase=='dawn':
             if not self.check_win(): self.begin_speech(False)
+        elif self.phase=='vote': self.next_vote()
         elif self.phase=='result': self.night()
         return True
     def voice_targets(self,i):
