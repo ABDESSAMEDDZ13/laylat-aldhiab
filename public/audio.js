@@ -1,6 +1,6 @@
 // 16 kHz signed PCM, 20 ms frames. Server enforces every sender and recipient.
 export class GameAudio {
-  constructor(send){this.send=send;this.ctx=null;this.stream=null;this.node=null;this.enabled=false;this.allowed=false;this.muted=false;this.next=new Map();this.sources=new Set();this.epoch=0;}
+  constructor(send){this.send=send;this.ctx=null;this.stream=null;this.node=null;this.enabled=false;this.allowed=false;this.muted=false;this.next=new Map();this.sources=new Set();this.delay=new Map();}
   async setup(){
     if(this.enabled){await this.ctx.resume();return;}
     if(!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw Error('الصوت يحتاج متصفحاً حديثاً واتصال HTTPS');
@@ -14,6 +14,12 @@ export class GameAudio {
   }
   setAllowed(v){this.allowed=v;this.stream?.getAudioTracks().forEach(t=>t.enabled=v&&!this.muted);}
   setMuted(v){this.muted=v;this.setAllowed(this.allowed);}
-  clear(){this.epoch++;for(const s of this.sources){try{s.stop()}catch{}}this.sources.clear();this.next.clear();}
-  play(buffer){if(!this.enabled||this.ctx.state!=='running'||buffer.byteLength!==648)return;const bytes=new Uint8Array(buffer,0,8);const id=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');const pcm=new Int16Array(buffer,8);const b=this.ctx.createBuffer(1,pcm.length,16000);const f=b.getChannelData(0);for(let i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;const s=this.ctx.createBufferSource();s.buffer=b;s.connect(this.ctx.destination);let at=this.next.get(id)||0;const n=this.ctx.currentTime;if(at<n||at>n+.30)at=n+.05;s.start(at);this.next.set(id,at+.02);this.sources.add(s);s.onended=()=>this.sources.delete(s);}
+  clear(){this.delay.clear();for(const s of this.sources){try{s.stop()}catch{}}this.sources.clear();this.next.clear();}
+  play(buffer){if(!this.enabled||this.ctx.state!=='running'||buffer.byteLength!==648)return;const bytes=new Uint8Array(buffer,0,8);const id=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');const pcm=new Int16Array(buffer,8);const b=this.ctx.createBuffer(1,pcm.length,16000);const f=b.getChannelData(0);for(let i=0;i<pcm.length;i++)f[i]=pcm[i]/32768;const s=this.ctx.createBufferSource();s.buffer=b;s.connect(this.ctx.destination);let at=this.next.get(id)||0;const n=this.ctx.currentTime;if(at>n+.65)return;
+    // Buffer short network bursts. Never schedule new audio over queued speech.
+    if(at<=n){
+      const lead=at && n-at<1 ? Math.min(.30,(this.delay.get(id)||.12)+.04) : .12;
+      this.delay.set(id,lead);at=n+lead;
+    }
+    s.start(at);this.next.set(id,at+.02);this.sources.add(s);s.onended=()=>this.sources.delete(s);}
 }

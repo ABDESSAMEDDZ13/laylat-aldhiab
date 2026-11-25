@@ -137,19 +137,7 @@ class Game:
         if k=='start': self.start(i); return
         if k=='kick':
             target=d.get('target'); require(i==self.host and target in self.players and target!=i and not self.players[target].online,'يمكن إقصاء لاعب غير متصل فقط')
-            if self.phase=='lobby': del self.players[target]; return
-            require(self.phase!='end' and self.players[target].alive,'اللاعب غير متاح')
-            self.eliminate(target,'disconnect'); self.queue=[x for x in self.queue if x!=target]
-            self.tied=[x for x in self.tied if x!=target]; self.votes={a:b for a,b in self.votes.items() if a!=target}
-            if self.check_win(): return
-            self.check_pause()
-            if self.phase in ('speech','debate') and self.turn==target: self.next_speech()
-            elif self.phase=='vote' and self.turn==target: self.next_vote()
-            elif self.phase=='wolves':
-                self.caps=self.powers()
-                if all(x in self.actions for x in self.caps): self.witch_phase()
-            elif self.phase=='witch' and self.role('witch') is None: self.doctor_phase()
-            elif self.phase=='doctor' and self.role('doctor') is None: self.resolve_night()
+            self.remove_from_play(target)
             return
         require(p.alive and self.phase not in ('lobby','end') and self.paused_at is None,'لا يمكنك تنفيذ إجراء الآن')
         if k in ('kill','silence'):
@@ -173,6 +161,20 @@ class Game:
         elif k=='vote':
             require(self.phase=='vote' and self.turn==i and i not in self.votes,'ليس دورك في التصويت'); t=d.get('target'); require(t in self.valid_targets(i,k),'اختيار غير مسموح'); self.votes[i]=t; self.next_vote()
         else: raise ValueError('إجراء غير معروف')
+    def remove_from_play(self,target):
+        if self.phase=='lobby': del self.players[target]; return
+        require(self.phase!='end' and self.players[target].alive,'اللاعب غير متاح')
+        self.eliminate(target,'disconnect'); self.queue=[x for x in self.queue if x!=target]
+        self.tied=[x for x in self.tied if x!=target]; self.votes={a:b for a,b in self.votes.items() if a!=target}
+        if self.check_win(): return
+        self.check_pause()
+        if self.phase in ('speech','debate') and self.turn==target: self.next_speech()
+        elif self.phase=='vote' and self.turn==target: self.next_vote()
+        elif self.phase=='wolves':
+            self.caps=self.powers()
+            if all(x in self.actions for x in self.caps): self.witch_phase()
+        elif self.phase=='witch' and self.role('witch') is None: self.doctor_phase()
+        elif self.phase=='doctor' and self.role('doctor') is None: self.resolve_night()
     def bot_step(self):
         if not self.test or self.paused_at is not None or now()<self.bot_due: return False
         move=None; actor=None
@@ -263,8 +265,16 @@ def configure_test(g,d):
 def namecheck(n):
     require(isinstance(n,str) and 1<=len(n.strip())<=24,'اكتب اسماً من 1 إلى 24 حرفاً'); return n.strip()
 
+async def send_voice(game,listener,ws,queue):
+    while True:
+        sender,frame,stamp=await queue.get()
+        if listener.ws is not ws: return
+        if now()-stamp>.4 or listener.id not in game.voice_targets(sender): continue
+        try: await asyncio.wait_for(ws.send_bytes(frame),.25)
+        except (ConnectionError,RuntimeError,asyncio.TimeoutError): pass
+
 async def socket(request):
-    ws=web.WebSocketResponse(heartbeat=15,max_msg_size=8192); await ws.prepare(request); game=None; player=None
+    ws=web.WebSocketResponse(heartbeat=15,max_msg_size=8192); await ws.prepare(request); game=None; player=None; voice_task=None
     try:
         async for msg in ws:
             if msg.type==WSMsgType.TEXT:
@@ -283,23 +293,37 @@ async def socket(request):
                             g=ROOMS.get(str(d.get('code','')).upper()); p=next((p for p in g.players.values() if secrets.compare_digest(p.token,str(d.get('token','')))),None) if g else None; require(p is not None,'انتهت جلسة الغرفة'); game=g; player=p
                         else: raise ValueError('انضم إلى غرفة أولاً')
                         old=player.ws; player.ws=ws
+                        player.voice_queue=asyncio.Queue(maxsize=32)
+                        voice_task=asyncio.create_task(send_voice(game,player,ws,player.voice_queue))
                         if old and old is not ws: await old.close(code=4000,message=b'replaced')
                         game.activity=now(); game.check_pause(); await safe_send(ws,{'type':'session','code':game.code,'token':player.token}); await game.broadcast()
                     else:
-                        require(player.ws is ws,'الجلسة غير نشطة'); game.act(player.id,d); await game.broadcast()
+                        require(player.ws is ws,'الجلسة غير نشطة')
+                        if typ=='leave':
+                            if game.phase=='lobby' or (player.alive and game.phase!='end'):
+                                game.remove_from_play(player.id)
+                            player.token=secrets.token_urlsafe(32)
+                            if game.test or not game.players: ROOMS.pop(game.code,None)
+                            await safe_send(ws,{'type':'left'})
+                            break
+                        game.act(player.id,d); await game.broadcast()
                 except (ValueError,TypeError,KeyError) as e: await safe_send(ws,{'type':'error','message':str(e) if isinstance(e,ValueError) and not isinstance(e,json.JSONDecodeError) else 'طلب غير صالح'})
             elif msg.type==WSMsgType.BINARY and player and player.ws is ws:
                 data=msg.data
                 if len(data)!=640 or not game.can_talk(player.id): continue
-                t=now(); player.audio_budget=min(10,player.audio_budget+(t-player.audio_at)*55); player.audio_at=t
+                t=now(); player.audio_budget=min(22,player.audio_budget+(t-player.audio_at)*55); player.audio_at=t
                 if player.audio_budget<1: continue
                 player.audio_budget-=1
-                async def relay(q):
-                    try:
-                        if q.online and not q.bot: await asyncio.wait_for(q.ws.send_bytes(bytes.fromhex(player.id)+data),.25)
-                    except (ConnectionError,RuntimeError,asyncio.TimeoutError): pass
-                await asyncio.gather(*(relay(game.players[j]) for j in game.voice_targets(player.id)))
+                frame=bytes.fromhex(player.id)+data
+                for target in game.voice_targets(player.id):
+                    q=game.players[target]
+                    if not q.online or q.bot: continue
+                    if q.voice_queue.full(): q.voice_queue.get_nowait()
+                    q.voice_queue.put_nowait((player.id,frame,t))
     finally:
+        if voice_task:
+            voice_task.cancel()
+            await asyncio.gather(voice_task,return_exceptions=True)
         if player and player.ws is ws:
             player.ws=None
             if game.host==player.id:
