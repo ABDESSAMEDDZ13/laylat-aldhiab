@@ -26,7 +26,7 @@ class Game:
         self.settings={'speech':60,'debate':120,'wolves':120,'witch':30,'doctor':30,'single':False,'extra':False}
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
-        self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
+        self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
     def alive(self): return [p.id for p in self.players.values() if p.alive]
     def wolves(self): return [i for i in self.alive() if self.players[i].role in WOLVES]
     def role(self,r): return next((i for i in self.alive() if self.players[i].role==r),None)
@@ -83,7 +83,8 @@ class Game:
         if victim2 and victim2!=protect: self.eliminate(victim2,'night')
         self.last_doctor=protect; self.last_silenced=a.get('silence'); self.silenced=self.last_silenced if self.last_silenced in self.alive() else None
         self.note='انتهت الليلة. لم يمت أحد.' if not self.deaths else 'انتهت الليلة.'
-        if not self.check_win(): self.begin_speech(False)
+        self.doctor_saved=bool(protect and (victim2==protect or (victim==protect and not saved)))
+        self.setphase('dawn',10)
     def begin_speech(self,debate):
         self.setphase('debate' if debate else 'speech'); self.queue=self.order([i for i in (self.tied if debate else self.alive()) if i in self.alive() and (debate or i!=self.silenced)])
         self.next_speech()
@@ -207,6 +208,8 @@ class Game:
         elif self.phase=='witch': self.doctor_phase()
         elif self.phase=='doctor': self.resolve_night()
         elif self.phase in ('speech','debate'): self.next_speech()
+        elif self.phase=='dawn':
+            if not self.check_win(): self.begin_speech(False)
         elif self.phase=='result': self.night()
         return True
     def voice_targets(self,i):
@@ -228,7 +231,7 @@ class Game:
                 private['witch']={'victim':self.actions.get('kill') if self.potions['life'] else None,'targets':self.valid_targets(i,'witchkill') if self.potions['death'] else []}
         if self.phase=='doctor' and p.alive and p.role=='doctor': private['protect']=self.valid_targets(i,'protect')
         if self.phase=='vote' and self.turn==i and p.alive: private['vote']=self.valid_targets(i,'vote')
-        return {'type':'state','test':self.test,'testRole':self.test_role,'code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'bot':q.bot,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
+        return {'type':'state','test':self.test,'testRole':self.test_role,'code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'doctorSaved':self.phase=='dawn' and self.doctor_saved,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'bot':q.bot,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
     async def broadcast(self):
         await asyncio.gather(*(safe_send(p.ws,self.view(p.id)) for p in self.players.values() if p.online and not p.bot))
 

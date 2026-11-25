@@ -39,6 +39,24 @@ class Logic(unittest.TestCase):
         g.act(w.id,{'type':'witch','save':True,'target':d.id});self.assertEqual(g.phase,'doctor');self.assertNotIn('witch',g.view(d.id)['private'])
         g.act(d.id,{'type':'protect','target':d.id});self.assertTrue(v.alive and d.alive);self.assertEqual(g.potions,{'life':False,'death':False});self.assertEqual(g.silenced,v2.id)
         self.assertNotIn(v2.id,[g.turn]+g.queue);g.night();self.assertNotIn(v2.id,g.valid_targets(s.id,'silence'));self.assertNotIn(d.id,g.valid_targets(d.id,'protect'))
+    def test_dawn_precedes_speech_and_only_reports_effective_saves(self):
+        for potion,poison,expected in [(False,False,True),(True,False,False),(True,True,True)]:
+            g,players=self.make()
+            black,silent,witch,doctor,victim,muted,*_=players
+            g.actions={'kill':victim.id,'protect':victim.id,'silence':muted.id,'save':potion}
+            if poison:g.actions['witchkill']=victim.id
+            g.resolve_night()
+            view=g.view(muted.id)
+            self.assertEqual(view['phase'],'dawn')
+            self.assertEqual(view['doctorSaved'],expected)
+            self.assertIsNone(view['turn'])
+            self.assertEqual(view['silenced'],muted.id)
+            self.assertEqual(view['private'],{})
+            self.assertFalse(any(g.can_talk(p.id) for p in players))
+            g.deadline=0;g.tick()
+            self.assertEqual(g.phase,'speech')
+            self.assertNotIn(muted.id,[g.turn]+g.queue)
+
     def test_inheritance(self):
         g,p=self.make(True);b,s,*_=p;normal=p[-1];g.eliminate(b.id,'vote');self.assertEqual(g.powers(),{'kill':s.id,'silence':s.id});g.eliminate(s.id,'vote');self.assertEqual(g.powers(),{'kill':normal.id,'silence':normal.id})
     def test_vote_tie_and_debate(self):
