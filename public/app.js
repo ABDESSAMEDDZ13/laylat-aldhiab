@@ -19,7 +19,7 @@ function unlockEffects(){
   if(effectsContext.state!=='running')effectsContext.resume().catch(()=>{});
 }
 document.addEventListener('click',unlockEffects,true);
-const melodies={wolves:[294,220],dawn:[392,494,587],vote:[330,440],end:[392,494,587,784]};
+const melodies={wolves:[294,220],dawn:[392,494,587],vote:[294,392,523],incoming:[740,554,740],end:[392,494,587,784]};
 function playCue(phase){
   const tones=melodies[phase],ctx=effectsContext;
   if(!effectsOn||!tones||ctx?.state!=='running')return;
@@ -46,7 +46,49 @@ function showDawn(){
   dialog.onclose=()=>{dismissedDawn=key};
   dialog.querySelector('button').onclick=()=>dialog.close();
 }
-function connect(){socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);socket.binaryType='arraybuffer';socket.onopen=()=>{connected=true;if(session)send({type:'resume',...session});else render()};socket.onmessage=e=>{if(typeof e.data!=='string'){audio.play(e.data);return}const d=JSON.parse(e.data);if(d.type==='session'){session={code:d.code,token:d.token};sessionStorage.setItem('wolf-session',JSON.stringify(session))}else if(d.type==='error'){error(d.message);if(d.message==='انتهت جلسة الغرفة'){session=null;state=null;sessionStorage.removeItem('wolf-session');render()}}else if(d.type==='state'){const old=state;state=d;if(old&&old.phase!==d.phase)playCue(d.phase);const a=`${d.day}:${d.phase}:${d.turn}:${d.paused}`;if(a!==currentAction){draft={save:false,target:'',kill:'',silence:''};audio.clear();currentAction=a}timerEnd=d.remaining==null?null:performance.now()+d.remaining*1000;audio.setAllowed(d.talk);render()}};socket.onclose=e=>{connected=false;audio.setAllowed(false);audio.clear();if(e.code===4000){session=null;state=null;sessionStorage.removeItem('wolf-session');render();return}if(state)render();else if(!document.querySelector('#player-name'))render();clearTimeout(reconnect);reconnect=setTimeout(connect,1200)};socket.onerror=()=>{}}
+const phaseIntros={
+  wolves:['night','هبط الليل','القرية ترقد والذئاب تفيق'],
+  dawn:['day','طلع النهار','حان وقت كشف أحداث الليلة'],
+  vote:['vote','وقت التصويت','كل لاعب يصوّت كي يجي دوره']
+};
+let introTimer,noticeTimer;
+function showPhaseIntro(phase){
+  const intro=document.getElementById('phase-intro');
+  clearTimeout(introTimer);
+  intro.hidePopover?.();intro.hidden=true;
+  const scene=phaseIntros[phase];
+  if(!scene)return;
+  intro.dataset.kind=scene[0];
+  intro.querySelector('strong').textContent=scene[1];
+  intro.querySelector('small').textContent=scene[2];
+  intro.hidden=false;
+  if(intro.showPopover)intro.showPopover();
+  else intro.removeAttribute('popover');
+  introTimer=setTimeout(()=>{intro.hidePopover?.();intro.hidden=true},1700);
+}
+function announceState(previous,next){
+  if(!previous||previous.code!==next.code)return;
+  if(previous.phase!==next.phase||previous.day!==next.day){
+    showPhaseIntro(next.phase);
+    playCue(next.phase);
+  }
+  if(previous.phase!=='vote'||previous.day!==next.day||previous.round!==next.round)return;
+  const voters=Object.entries(next.votes).filter(([id,target])=>
+    target===next.me && id!==next.me && previous.votes[id]!==target);
+  if(!voters.length)return;
+  const notice=document.getElementById('vote-notice');
+  clearTimeout(noticeTimer);
+  if(notice.hidden)notice.replaceChildren();
+  for(const [id] of voters){
+    const line=document.createElement('div');
+    line.textContent='🗳️ '+name(id)+' صوّت عليك';
+    notice.append(line);
+  }
+  notice.hidden=false;
+  playCue('incoming');
+  noticeTimer=setTimeout(()=>{notice.hidden=true;notice.replaceChildren()},3800);
+}
+function connect(){socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);socket.binaryType='arraybuffer';socket.onopen=()=>{connected=true;if(session)send({type:'resume',...session});else render()};socket.onmessage=e=>{if(typeof e.data!=='string'){audio.play(e.data);return}const d=JSON.parse(e.data);if(d.type==='session'){session={code:d.code,token:d.token};sessionStorage.setItem('wolf-session',JSON.stringify(session))}else if(d.type==='error'){error(d.message);if(d.message==='انتهت جلسة الغرفة'){session=null;state=null;sessionStorage.removeItem('wolf-session');render()}}else if(d.type==='state'){const old=state;state=d;const a=`${d.day}:${d.phase}:${d.turn}:${d.paused}`;if(a!==currentAction){draft={save:false,target:'',kill:'',silence:''};audio.clear();currentAction=a}timerEnd=d.remaining==null?null:performance.now()+d.remaining*1000;audio.setAllowed(d.talk);render();announceState(old,d)}};socket.onclose=e=>{connected=false;audio.setAllowed(false);audio.clear();if(e.code===4000){session=null;state=null;sessionStorage.removeItem('wolf-session');render();return}if(state)render();else if(!document.querySelector('#player-name'))render();clearTimeout(reconnect);reconnect=setTimeout(connect,1200)};socket.onerror=()=>{}}
 function header(){return `<header class="brand"><b>◐ ليلة الذئاب</b><button id="effects" class="effects" aria-label="المؤثرات الصوتية" aria-pressed="${effectsOn}">${effectsOn?'🔔':'🔕'}</button><span class="pill">${connected?'● متصل':'○ إعادة الاتصال…'}</span></header>`}
 function home(){const invite=new URLSearchParams(location.search).get('room')||'';return `${header()}<section class="hero"><div class="moon">🌙</div><h1>ليلة الذئاب</h1><p class="gold">من بينكم الذئب؟</p><p class="muted">لعبة جماعية صوتية مع الأصدقاء • 5 لاعبين على الأقل</p></section><section class="panel"><label for="player-name">اسم اللاعب</label><input id="player-name" maxlength="24" autocomplete="nickname" placeholder="اكتب اسمك"><button id="create">إنشاء غرفة جديدة</button><div class="divider"></div><h3>🧪 تجربة فردية</h3><small>اختبر القواعد وحدك مع لاعبين آليين.</small><label>عدد اللاعبين (بما فيهم أنت)<select id="test-count">${Array.from({length:26},(_,i)=>i+5).map(n=>`<option value="${n}" ${n===8?'selected':''}>${n}</option>`).join('')}</select></label><label>دورك في التجربة<select id="test-role"><option value="random">عشوائي</option>${Object.entries(roles).map(([r,label])=>`<option value="${r}">${label}</option>`).join('')}</select></label><button class="secondary" id="test-create">بدء تجربة فردية</button><div class="divider"></div><label for="room-code">رمز الغرفة</label><input id="room-code" maxlength="6" value="${escape(invite)}" placeholder="ABC123" dir="ltr" autocapitalize="characters"><button class="secondary" id="join">انضم إلى أصدقائك</button></section><p class="muted center">استعمل سماعات الأذن لتجربة صوتية أفضل.</p>`}
 function packChannel(){
@@ -80,6 +122,8 @@ let lastScene='', lastBallot='';
 function animateScene(){
   const phase=state?.phase||'home';
   app.dataset.scene=phase;
+  document.body.dataset.sky=['wolves','witch','doctor'].includes(phase)?'night':
+    phase==='vote'?'vote':['dawn','speech','debate','result'].includes(phase)?'day':'home';
   const scene=[state?.code,state?.day,phase,state?.round].join('/');
   const vote=phase==='vote'?[scene,Object.keys(state.votes).length,state.turn].join('/'):'';
   if(scene!==lastScene)app.querySelector('.phase')?.classList.add('arrive');
