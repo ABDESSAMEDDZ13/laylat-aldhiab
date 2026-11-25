@@ -43,3 +43,5 @@ body[data-sky="vote"]{background:linear-gradient(145deg,#65352a,#342326 50%,#221
  @keyframes sun-rise{from{transform:translateY(60px) scale(.7);opacity:.2}}
  @keyframes moon-fall{from{transform:translateY(-60px) rotate(-25deg);opacity:.2}}
 }
+
+.voice-live{display:none}.person.speaking{border-color:#76ddb3}.speaking .voice-live{display:block;font-size:.8rem;color:#94f3c5}.speaking .avatar{box-shadow:0 0 0 3px #76ddb3}.person.dead.speaking{opacity:1}#turn-notice{position:fixed;inset-inline:1rem;top:max(1rem,env(safe-area-inset-top));margin:auto;width:fit-content;z-index:61;padding:.9rem 1.5rem;border:1px solid #76ddb3;border-radius:16px;background:#163d35;color:#beffe7;font-weight:700;pointer-events:none}
