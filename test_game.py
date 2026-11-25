@@ -137,6 +137,24 @@ class Network(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.TimeoutError):await socks[v].receive(timeout=.15)
             await socks[v].send_bytes(bytes(640))
             with self.assertRaises(asyncio.TimeoutError):await socks[wolves[0]].receive(timeout=.15)
+            ghosts=[i for i in range(5) if i not in wolves][:2]
+            game=ROOMS[code]
+            for i in ghosts:game.eliminate(states[i]['me'],'night')
+            frame=bytes([7])*640
+            for sender,receiver in [ghosts,ghosts[::-1]]:
+                self.assertTrue(game.view(states[sender]['me'])['talk'])
+                await socks[sender].send_bytes(frame)
+                packet=await socks[receiver].receive_bytes(timeout=2)
+                self.assertEqual(packet,bytes.fromhex(states[sender]['me'])+frame)
+                with self.assertRaises(asyncio.TimeoutError):await socks[wolves[0]].receive(timeout=.1)
+            await socks[wolves[0]].send_bytes(frame)
+            await socks[wolves[1]].receive_bytes(timeout=2)
+            with self.assertRaises(asyncio.TimeoutError):await socks[ghosts[0]].receive(timeout=.1)
+            for phase in ('speech','debate'):
+                game.setphase(phase);game.turn=states[wolves[0]]['me']
+                await socks[wolves[0]].send_bytes(frame)
+                for i in ghosts:
+                    self.assertEqual((await socks[i].receive_bytes(timeout=2))[8:],frame)
         finally:
             for ws in socks:await ws.close()
             await client.close();ROOMS.clear()
