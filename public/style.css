@@ -49,3 +49,5 @@ body[data-sky="vote"]{background:linear-gradient(145deg,#65352a,#342326 50%,#221
 .role-card{background:linear-gradient(155deg,#362b46,#191c2a)}.role-symbol{font-size:3rem;margin:.6rem}.role-card p{margin:1rem 0}.recap summary{cursor:pointer;color:var(--gold);padding:.65rem 0;font-weight:bold}.recap details+details{border-top:1px solid var(--line)}.recap li{padding:.25rem 0;overflow-wrap:anywhere}
 
 .tally ul{list-style:none;padding:0;margin:0;display:grid;gap:.65rem}.tally li div{display:flex;justify-content:space-between;gap:.6rem;align-items:baseline}.tally li bdi{overflow-wrap:anywhere}.tally li strong{font-variant-numeric:tabular-nums;color:var(--gold)}.tally-track{display:block;border-radius:5px;background:#323444;height:7px;margin-top:.2rem;overflow:hidden}.tally-track i{display:block;height:100%;background:#82a9ac;border-radius:inherit}.tally-track .leading{background:#efbf78}.tally-note{color:var(--gold);overflow-wrap:anywhere}
+
+.person .suspect-note{max-width:100%;width:100%;font-size:13px;min-height:38px;padding:4px}

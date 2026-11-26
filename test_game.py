@@ -90,6 +90,24 @@ class Logic(unittest.TestCase):
             self.assertEqual(first['out'],[])
             self.assertEqual([d['id'] for d in last['out']],[black.id,silent.id])
 
+    def test_replay_readiness_and_fresh_round(self):
+        g,players=self.make()
+        for wolf in g.wolves():g.eliminate(wolf,'vote')
+        self.assertTrue(g.check_win())
+        settings=g.settings.copy();tokens=[p.token for p in players]
+        def replay(actor):g.act(actor,{'type':'replay','match':1})
+        with self.assertRaises(ValueError):replay(g.host)
+        for p in players:g.act(p.id,{'type':'ready','match':1,'ready':True})
+        with self.assertRaises(ValueError):replay(players[1].id)
+        replay(g.host)
+        self.assertEqual((g.phase,g.day,g.match),('wolves',1,2))
+        self.assertEqual(g.settings,settings)
+        self.assertEqual([p.token for p in players],tokens)
+        self.assertEqual(len(g.alive()),len(players))
+        self.assertEqual(g.ready,set())
+        self.assertEqual(g.history,[{'day':1,'actions':{},'out':[],'resolved':False}])
+        self.assertNotIn('history',g.view(g.host)['private'])
+
     def test_inheritance(self):
         g,p=self.make(True);b,s,*_=p;normal=p[-1];g.eliminate(b.id,'vote');self.assertEqual(g.powers(),{'kill':s.id,'silence':s.id});g.eliminate(s.id,'vote');self.assertEqual(g.powers(),{'kill':normal.id,'silence':normal.id})
     def test_vote_tie_and_debate(self):

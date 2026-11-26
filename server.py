@@ -24,9 +24,13 @@ class Game:
     def __init__(self,code,owner):
         self.test=False; self.test_role=None; self.bot_due=0; self.code=code; self.players={owner.id:owner}; self.host=owner.id; self.phase='lobby'; self.day=0
         self.settings={'speech':60,'debate':60,'vote':60,'wolves':60,'witch':60,'doctor':60,'single':False,'extra':False}
+        self.match=1; self.ready=set(); self.created=now(); self.activity=now()
+        self.reset_round()
+    def reset_round(self):
+        self.phase='lobby'; self.day=0
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
-        self.history=[]; self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
+        self.history=[]; self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}
     def alive(self): return [p.id for p in self.players.values() if p.alive]
     def wolves(self): return [i for i in self.alive() if self.players[i].role in WOLVES]
     def role(self,r): return next((i for i in self.alive() if self.players[i].role==r),None)
@@ -72,7 +76,10 @@ class Game:
         if self.phase=='lobby': return False
         w=len(self.wolves()); v=len(self.alive())-w
         if w==0 or w>=v:
-            self.winner='village' if w==0 else 'wolves'; self.setphase('end'); return True
+            self.winner='village' if w==0 else 'wolves'; self.setphase('end')
+            if not self.players[self.host].online:
+                self.host=next((j for j,q in self.players.items() if q.online and not q.bot),self.host)
+            return True
         return False
     def eliminate(self,i,cause):
         if i in self.players and self.players[i].alive:
@@ -126,6 +133,22 @@ class Game:
         return []
     def act(self,i,d):
         p=self.players[i]; k=d.get('type'); self.activity=now()
+        if k in ('ready','replay'):
+            require(self.phase=='end' and d.get('match')==self.match,'الجولة تبدّلت')
+            if k=='ready':
+                if d.get('ready') is True:self.ready.add(i)
+                else:self.ready.discard(i)
+                return
+            require(i==self.host,'صاحب الغرفة فقط يطلق الجولة')
+            roster={j:q for j,q in self.players.items() if q.online}
+            require(all(q.bot or j in self.ready for j,q in roster.items()),'استنى حتى يكون الجميع واجد')
+            require(len(roster)>=(7 if self.settings['extra'] else 5),'ما كاش عدد كافي باش تبدا الجولة')
+            self.players=roster
+            self.match+=1; self.ready.clear(); self.reset_round()
+            for q in roster.values():
+                q.alive=True; q.role=None
+            self.start(i)
+            return
         if k=='settings':
             require(i==self.host and self.phase=='lobby','الإعدادات لصاحب الغرفة فقط')
             s=d.get('settings',{}); require(isinstance(s,dict),'إعدادات غير صالحة')
@@ -244,7 +267,7 @@ class Game:
                 private['witch']={'victim':self.actions.get('kill') if self.potions['life'] else None,'targets':self.valid_targets(i,'witchkill') if self.potions['death'] else []}
         if self.phase=='doctor' and p.alive and p.role=='doctor': private['protect']=self.valid_targets(i,'protect')
         if self.phase=='vote' and self.turn==i and p.alive: private['vote']=self.valid_targets(i,'vote')
-        return {'type':'state','test':self.test,'testRole':self.test_role,'code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'doctorSaved':self.phase=='dawn' and self.doctor_saved,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'bot':q.bot,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
+        return {'type':'state','match':self.match,'ready':[q.id for q in self.players.values() if self.phase=='end' and q.online and (q.bot or q.id in self.ready)],'test':self.test,'testRole':self.test_role,'code':self.code,'me':i,'host':self.host,'phase':self.phase,'day':self.day,'settings':self.settings,'turn':self.turn,'round':self.round,'tied':self.tied,'votes':self.votes,'silenced':self.silenced,'doctorSaved':self.phase=='dawn' and self.doctor_saved,'deaths':self.deaths,'note':self.note,'winner':self.winner,'paused':self.paused_at is not None,'remaining':max(0,self.deadline-(self.paused_at or now())) if self.deadline is not None else None,'role':p.role,'talk':self.can_talk(i),'private':private,'players':[{'id':q.id,'name':q.name,'bot':q.bot,'online':q.online,'alive':q.alive,'role':q.role if not q.alive or reveal or q.id==i or (w and q.id in self.wolves()) else None} for q in self.players.values()]}
     async def broadcast(self):
         await asyncio.gather(*(safe_send(p.ws,self.view(p.id)) for p in self.players.values() if p.online and not p.bot))
 
@@ -330,8 +353,9 @@ async def socket(request):
             await asyncio.gather(voice_task,return_exceptions=True)
         if player and player.ws is ws:
             player.ws=None
+            game.ready.discard(player.id)
             if game.host==player.id:
-                nxt=next((q.id for q in game.players.values() if q.online and q.alive and not q.bot),None)
+                nxt=next((q.id for q in game.players.values() if q.online and (q.alive or game.phase=='end') and not q.bot),None)
                 if nxt: game.host=nxt
             game.check_pause(); await game.broadcast()
     return ws
