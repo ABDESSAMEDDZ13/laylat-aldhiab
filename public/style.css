@@ -51,3 +51,9 @@ body[data-sky="vote"]{background:linear-gradient(145deg,#65352a,#342326 50%,#221
 .tally ul{list-style:none;padding:0;margin:0;display:grid;gap:.65rem}.tally li div{display:flex;justify-content:space-between;gap:.6rem;align-items:baseline}.tally li bdi{overflow-wrap:anywhere}.tally li strong{font-variant-numeric:tabular-nums;color:var(--gold)}.tally-track{display:block;border-radius:5px;background:#323444;height:7px;margin-top:.2rem;overflow:hidden}.tally-track i{display:block;height:100%;background:#82a9ac;border-radius:inherit}.tally-track .leading{background:#efbf78}.tally-note{color:var(--gold);overflow-wrap:anywhere}
 
 .person .suspect-note{max-width:100%;width:100%;font-size:13px;min-height:38px;padding:4px}
+
+.hero .village-art{display:block;width:100%;height:auto;border-radius:16px;margin:0 auto .75rem}
+.role-portrait{object-fit:cover;display:block;height:auto;aspect-ratio:1;border-radius:14px}
+.role-card .role-portrait{width:min(100%,29vh,19rem);margin:.6rem auto;border:1px solid #846a4e}
+.panel.role .role-portrait{width:min(100%,12rem);margin:.5rem auto}
+.panel.role{text-align:center}
