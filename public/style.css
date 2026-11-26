@@ -45,3 +45,5 @@ body[data-sky="vote"]{background:linear-gradient(145deg,#65352a,#342326 50%,#221
 }
 
 .voice-live{display:none}.person.speaking{border-color:#76ddb3}.speaking .voice-live{display:block;font-size:.8rem;color:#94f3c5}.speaking .avatar{box-shadow:0 0 0 3px #76ddb3}.person.dead.speaking{opacity:1}#turn-notice{position:fixed;inset-inline:1rem;top:max(1rem,env(safe-area-inset-top));margin:auto;width:fit-content;z-index:61;padding:.9rem 1.5rem;border:1px solid #76ddb3;border-radius:16px;background:#163d35;color:#beffe7;font-weight:700;pointer-events:none}
+
+.role-card{background:linear-gradient(155deg,#362b46,#191c2a)}.role-symbol{font-size:3rem;margin:.6rem}.role-card p{margin:1rem 0}.recap summary{cursor:pointer;color:var(--gold);padding:.65rem 0;font-weight:bold}.recap details+details{border-top:1px solid var(--line)}.recap li{padding:.25rem 0;overflow-wrap:anywhere}

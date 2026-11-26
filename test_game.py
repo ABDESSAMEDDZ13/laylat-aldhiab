@@ -72,6 +72,24 @@ class Logic(unittest.TestCase):
             g.deadline=0;g.tick()
         self.assertEqual(g.phase,'wolves')
 
+    def test_secrets_only_revealed_at_end(self):
+        g,players=self.make()
+        black,silent,witch,doctor,victim,muted,*_=players
+        g.act(black.id,{'type':'kill','target':victim.id})
+        g.act(silent.id,{'type':'silence','target':muted.id})
+        g.act(witch.id,{'type':'witch','save':False,'target':None})
+        g.act(doctor.id,{'type':'protect','target':victim.id})
+        g.night()
+        for p in players:self.assertNotIn('history',g.view(p.id)['private'])
+        for wolf in (black,silent):g.eliminate(wolf.id,'vote')
+        self.assertTrue(g.check_win())
+        for p in players:
+            first,last=g.view(p.id)['private']['history']
+            self.assertEqual(first['actions'],{'kill':victim.id,'silence':muted.id,'protect':victim.id})
+            self.assertTrue(first['resolved'])
+            self.assertEqual(first['out'],[])
+            self.assertEqual([d['id'] for d in last['out']],[black.id,silent.id])
+
     def test_inheritance(self):
         g,p=self.make(True);b,s,*_=p;normal=p[-1];g.eliminate(b.id,'vote');self.assertEqual(g.powers(),{'kill':s.id,'silence':s.id});g.eliminate(s.id,'vote');self.assertEqual(g.powers(),{'kill':normal.id,'silence':normal.id})
     def test_vote_tie_and_debate(self):

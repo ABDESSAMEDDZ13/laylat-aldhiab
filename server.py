@@ -26,7 +26,7 @@ class Game:
         self.settings={'speech':60,'debate':60,'vote':60,'wolves':60,'witch':60,'doctor':60,'single':False,'extra':False}
         self.deadline=None; self.paused_at=None; self.turn=None; self.queue=[]; self.votes={}; self.round=1; self.tied=[]; self.rotation=0
         self.actions={}; self.potions={'life':True,'death':True}; self.last_silenced=None; self.silenced=None; self.last_doctor=None
-        self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
+        self.history=[]; self.doctor_saved=False; self.deaths=[]; self.winner=None; self.note=''; self.caps={}; self.created=now(); self.activity=now()
     def alive(self): return [p.id for p in self.players.values() if p.alive]
     def wolves(self): return [i for i in self.alive() if self.players[i].role in WOLVES]
     def role(self,r): return next((i for i in self.alive() if self.players[i].role==r),None)
@@ -60,6 +60,7 @@ class Game:
     def night(self):
         if self.check_win(): return
         self.day+=1; self.rotation+=1; self.actions={}; self.deaths=[]; self.note=''; self.votes={}; self.tied=[]; self.round=1; self.silenced=None
+        self.history.append({'day':self.day,'actions':self.actions,'out':[],'resolved':False})
         self.caps=self.powers(); self.setphase('wolves',self.settings['wolves'])
     def witch_phase(self):
         self.setphase('witch',self.settings['witch'])
@@ -76,7 +77,9 @@ class Game:
     def eliminate(self,i,cause):
         if i in self.players and self.players[i].alive:
             self.players[i].alive=False; self.deaths.append({'id':i,'name':self.players[i].name,'role':self.players[i].role,'cause':cause})
+            if self.history: self.history[-1]['out'].append(self.deaths[-1])
     def resolve_night(self):
+        if self.history: self.history[-1]['resolved']=True
         a=self.actions; protect=a.get('protect'); victim=a.get('kill'); saved=a.get('save')
         if victim and victim!=protect and not saved: self.eliminate(victim,'night')
         victim2=a.get('witchkill')
@@ -231,6 +234,7 @@ class Game:
         return (self.phase=='lobby' or (self.phase=='wolves' and i in self.wolves()) or (self.phase in ('speech','debate') and i==self.turn))
     def view(self,i):
         p=self.players[i]; private={}; reveal=self.phase=='end'; w=p.role in WOLVES and p.alive
+        if reveal: private['history']=self.history
         if w: private['wolves']=self.wolves()
         if self.phase=='wolves' and w:
             private['wolfActions']={k:{'targets':self.valid_targets(i,k),'chosen':self.actions.get(k),'done':k in self.actions} for k in self.caps if self.caps[k]==i}; private['wolfChoices']=self.actions.copy()
